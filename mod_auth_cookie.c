@@ -21,7 +21,7 @@
 #include "response.h"
 #include "md5.h"
 
-#define LOG(level, ...)                                         \
+#define LOG(level, ...)                                           \
     if (pc->loglevel >= level) {                                  \
         log_error_write(srv, __FILE__, __LINE__, __VA_ARGS__);    \
     }
@@ -44,11 +44,12 @@
 // module configuration
 typedef struct {
     int loglevel;
-    buffer *name;     // cookie name to extract auth info
-    int override;     // how to handle incoming Auth header
-    buffer *authurl;  // page to go when unauthorized
-    buffer *key;      // key for cookie verification
-    int timeout;
+    buffer *name;    // cookie name to extract auth info
+    int override;    // how to handle incoming Auth header
+    buffer *authurl; // page to go when unauthorized
+    buffer *key;     // key for cookie verification
+    int timeout;     // life duration of last-stage auth token
+    buffer *options; // options for last-stage auth token cookie
 } plugin_config;
 
 // top-level module structure
@@ -84,6 +85,7 @@ merge_config(server *srv, connection *con, plugin_data *pd) {
     PATCH(authurl);
     PATCH(key);
     PATCH(timeout);
+    PATCH(options);
 
     // merge config from sub-contexts
     for (i = 1; i < srv->config_context->used; i++) {
@@ -104,6 +106,7 @@ merge_config(server *srv, connection *con, plugin_data *pd) {
             MERGE("auth-cookie.authurl", authurl);
             MERGE("auth-cookie.key", key);
             MERGE("auth-cookie.timeout", timeout);
+            MERGE("auth-cookie.options", options);
         }
     }
     return &(pd->conf);
@@ -129,12 +132,12 @@ self_url(connection *con, buffer *url, buffer_encoding_t enc) {
 //
 static handler_t
 endauth(server *srv, connection *con, plugin_config *pc) {
-    DEBUG("sb", "endauth:", pc->authurl);
-
     // pass through if no redirect target is specified
     if (buffer_is_empty(pc->authurl)) {
+        DEBUG("s", "endauth - continuing");
         return HANDLER_GO_ON;
     }
+    DEBUG("sb", "endauth - redirecting:", pc->authurl);
 
     // prepare redirection header
     buffer *url = buffer_init_buffer(pc->authurl);
@@ -192,7 +195,7 @@ int
 encrypt(buffer *buf, uint8_t *key, int keylen) {
     unsigned int i;
 
-    for (i = 0; i <= buf->used; i++) {
+    for (i = 0; i < buf->used; i++) {
         buf->ptr[i] ^= (i > 0 ? buf->ptr[i - 1] : 0) ^ key[i % keylen];
     }
     return 0;
@@ -220,7 +223,6 @@ decrypt(buffer *buf, uint8_t *key, int keylen) {
 void
 update_header(server *srv, connection *con,
               plugin_data *pd, plugin_config *pc, buffer *authinfo) {
-    UNUSED(srv);
     buffer *field, *token;
 
     DEBUG("sb", "decrypted authinfo:", authinfo);
@@ -239,11 +241,12 @@ update_header(server *srv, connection *con,
     buffer_append_string_buffer(field, authinfo);
     array_set_key_value(pd->users, CONST_BUF_LEN(token), CONST_BUF_LEN(field));
 
-    // insert auth token
+    // insert opaque auth token
     buffer_copy_string_buffer(field, pc->name);
     buffer_append_string(field, "=token:");
     buffer_append_string_buffer(field, token);
-    buffer_append_string(field, "; path=/;");
+    buffer_append_string(field, "; ");
+    buffer_append_string_buffer(field, pc->options);
     DEBUG("sb", "generating token cookie:", field);
     response_header_append(srv, con,
                            CONST_STR_LEN("Set-Cookie"), CONST_BUF_LEN(field));
@@ -251,7 +254,6 @@ update_header(server *srv, connection *con,
     buffer_free(field);
     buffer_free(token);
 }
-
 
 //
 // Handle token given in cookie.
@@ -273,7 +275,7 @@ handle_token(server *srv, connection *con,
     // Check for timeout
     time_t t0 = time(NULL);
     time_t t1 = strtol(entry->value->ptr, NULL, 10);
-    DEBUG("soso", "t0:", t0, ", t1:", t1);
+    DEBUG("sososo", "t0:", t0, ", t1:", t1, ", timeout:", pc->timeout);
     if (t0 - t1 > pc->timeout) return endauth(srv, con, pc);
 
     // Check for existence of actual authinfo
@@ -501,6 +503,8 @@ SETDEFAULTS_FUNC(module_set_defaults) {
           NULL, T_CONFIG_STRING, T_CONFIG_SCOPE_CONNECTION },
         { "auth-cookie.timeout",
           NULL, T_CONFIG_INT,    T_CONFIG_SCOPE_CONNECTION },
+        { "auth-cookie.options",
+          NULL, T_CONFIG_STRING, T_CONFIG_SCOPE_CONNECTION },
         { NULL, NULL, T_CONFIG_UNSET, T_CONFIG_SCOPE_UNSET }
     };
 
@@ -512,11 +516,12 @@ SETDEFAULTS_FUNC(module_set_defaults) {
 
         pc = pd->config[i] = calloc(1, sizeof(plugin_config));
         pc->loglevel = 1;
-        pc->name = buffer_init();
+        pc->name     = buffer_init();
         pc->override = 0;
-        pc->authurl = buffer_init();
-        pc->key     = buffer_init();
-        pc->timeout = 86400;
+        pc->authurl  = buffer_init();
+        pc->key      = buffer_init();
+        pc->timeout  = 86400;
+        pc->options  = buffer_init();
 
         cv[0].destination = &(pc->loglevel);
         cv[1].destination = pc->name;
@@ -524,6 +529,7 @@ SETDEFAULTS_FUNC(module_set_defaults) {
         cv[3].destination = pc->authurl;
         cv[4].destination = pc->key;
         cv[5].destination = &(pc->timeout);
+        cv[6].destination = pc->options;
 
         array *ca = ((data_config *)srv->config_context->data[i])->value;
         if (config_insert_values_global(srv, ca, cv) != 0) {
