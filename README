@@ -1,0 +1,128 @@
+mod_auth_cookie for lighttpd
+
+=== What is it? ===
+
+This is a lighttpd module that
+
+  1) controls access to web page by cookie authentication, and
+  2) maps authenticated cookie into HTTP Basic Authorization header.
+
+Initial goal of this module was to map OpenID/SSO mechanism
+onto HTTP BasicAuth mechanism, so I can move various legacy
+HTTP-BA based services under the hood of Google Accounts SSO.
+
+=== How does it work? ===
+
+This module does not verify user identity, but simply checks
+if UA has supplied verifiable authorization token in a cookie.
+Once verified, this module accepts whatever was in that
+encrypted cookie as user identity.
+
+Since embedding plain username/password in a cookie is a
+big NO-NO, this token is encrypted and signed by its issuer,
+in many case, external OpenID RP logon page.
+
+Typical session works as follows:
+
+  1. User tries to access protected page ("Page#1").
+
+  2. mod_auth_cookie checks for a cookie, and founds no
+     verifiable cookie exists. It now redirects UA to
+     external logon page ("Page#2").
+
+  3. At Page#2, the user is guided to OpenID SSO logon,
+     and comes back to Page#2 with verified identity.
+
+  4. At Page#2, verified identity is encrypted and signed
+     with shared key between Page#1 and #2, and finally
+     redirected back to Page#1.
+
+  5. mod_auth_cookie traps access to Page#1, and examines
+     cookie. Once verified, identity will be cached and
+     random token is generated and linked to the identity.
+
+  6. mod_auth_cookie overwrites cookie with previously-
+     generated token, so further UA access will not directly
+     contain identity info.
+
+  7. mod_auth_cookie maps identity info to HTTP-BA header, so
+     legacy webapps can recognize user identity.
+
+  8. Finally, the user is now allowed to view Page#1.
+
+This is a lengthly process, but this trampoline-like flow is
+needed to map complex OpenID-like authentication onto HTTP-BA
+mechanism.
+
+I first planned to implement mod_auth_openid which provides
+OpenID RP feature directly, but abandoned as it'd be much
+better and flexible to handle it in web application code.
+This modules provides minimal feature needed by external
+OpenID RP to inject identity information to HTTP-BA layer.
+
+=== Configuration ===
+
+  $HTTP["url"] =~ "^/secret/" {
+      auth-cookie.loglevel = 255
+
+      # Ignore incoming Authorization: header
+      auth-cookie.override = 2
+
+      # Life-duration of generated auth token
+      auth-cookie.timeout  = 3600
+
+      # Cookie name and option to use
+      auth-cookie.name     = "TestAuth"
+      auth-cookie.options  = "path=/;"
+
+      # URL of logon page to redirect to in case of unverified cookie
+      auth-cookie.authurl  = "/mac/login.php"
+
+      # Shared key used to encrypt and sign cookie payload
+      auth-cookie.key      = "shared-secret"
+  }
+
+=== How to encrypt and sign cookie ===
+
+Following is a sample code for generating verifiable auth
+cookie using PHP.
+
+  <?php
+  session_set_cookie_params(0, '/', '', FALSE, TRUE); 
+  session_start();
+  
+  // check identity
+  if (! check_user($_POST["username"], $POST["password"])) {
+      header("Location: login.php");
+  }
+
+  // core encryption functionality (basically an XOR)
+  function encrypt($buf, $key, $keylen) {
+      $n = strlen($buf);
+      for ($i = 0; $i < $n; $i++) {
+          $c = ord($buf[$i]);
+          $c ^= ($i > 0 ? ord($buf[$i - 1]) : 0) ^ ord($key[$i % $keylen]);
+          $buf[$i] = chr($c);
+      }
+      return $buf;
+  }
+
+  # create time-based temporal key for encryption/sign
+  $key = "shared-secret";
+  $now = time();
+  $now = $now - $now % 5;
+  $tmp = md5($now . $key, TRUE);
+
+  # encrypt and sign
+  $plaintext = base64_encode($_POST["username"] . ":dummytext");
+  $encrypted = bin2hex(encrypt($plaintext, $tmp, strlen($tmp)));
+  $signature = md5($key . $now . $encrypted);
+  $totaldata = "crypt:" . $signature . ":" . $encrypted;
+
+  # set as cookie, so mod_auth_cookie willl see it in further use
+  setcookie("TestAuth", $totaldata, 0, "/", "", FALSE, TRUE);
+
+  # redirect back to original protected page
+  header("Location: /protected/page.php");
+  ?>
+
