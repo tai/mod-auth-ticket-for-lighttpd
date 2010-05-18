@@ -225,8 +225,8 @@ update_header(server *srv, connection *con,
               plugin_data *pd, plugin_config *pc, buffer *authinfo) {
     buffer *field, *token;
 
-    DEBUG("sb", "decrypted authinfo:", authinfo);
-    
+    //DEBUG("sb", "decrypted authinfo:", authinfo);
+
     // insert auth header
     field = buffer_init_string("Basic ");
     buffer_append_string_buffer(field, authinfo);
@@ -250,7 +250,7 @@ update_header(server *srv, connection *con,
     DEBUG("sb", "generating token cookie:", field);
     response_header_append(srv, con,
                            CONST_STR_LEN("Set-Cookie"), CONST_BUF_LEN(field));
-    
+
     buffer_free(field);
     buffer_free(token);
 }
@@ -445,6 +445,7 @@ URIHANDLER_FUNC(module_uri_handler) {
     memset(buf, 0, sizeof(buf));
     strncpy(key, pc->name->ptr,  min(sizeof(key) - 1, pc->name->used));
     strncpy(buf, ds->value->ptr, min(sizeof(buf) - 1, ds->value->used));
+    DEBUG("ss", "parsing for key:", key);
     
     // check for "<AuthName>=" entry in a cookie
     for (cs = buf; (cs = strstr(cs, key)) != NULL; ) {
@@ -517,7 +518,7 @@ SETDEFAULTS_FUNC(module_set_defaults) {
         pc = pd->config[i] = calloc(1, sizeof(plugin_config));
         pc->loglevel = 1;
         pc->name     = buffer_init();
-        pc->override = 0;
+        pc->override = 2;
         pc->authurl  = buffer_init();
         pc->key      = buffer_init();
         pc->timeout  = 86400;

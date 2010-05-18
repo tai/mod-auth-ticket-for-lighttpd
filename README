@@ -94,6 +94,7 @@ cookie using PHP.
   // check identity
   if (! check_user($_POST["username"], $POST["password"])) {
       header("Location: login.php");
+      exit(0);
   }
 
   // core encryption functionality (basically an XOR)
