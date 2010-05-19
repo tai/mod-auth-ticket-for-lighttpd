@@ -21,6 +21,8 @@
 #include "response.h"
 #include "md5.h"
 
+#include "base64.h"
+
 #define LOG(level, ...)                                           \
     if (pc->loglevel >= level) {                                  \
         log_error_write(srv, __FILE__, __LINE__, __VA_ARGS__);    \
@@ -251,6 +253,12 @@ update_header(server *srv, connection *con,
     response_header_append(srv, con,
                            CONST_STR_LEN("Set-Cookie"), CONST_BUF_LEN(field));
 
+    // update REMOTE_USER field
+    base64_decode(field, authinfo->ptr);
+    char *pw = strchr(field->ptr, ':'); *pw = '\0';
+    DEBUG("ss", "identified username:", field->ptr);
+    buffer_copy_string_len(con->authed_user, field->ptr, strlen(field->ptr));
+    
     buffer_free(field);
     buffer_free(token);
 }
@@ -275,7 +283,7 @@ handle_token(server *srv, connection *con,
     // Check for timeout
     time_t t0 = time(NULL);
     time_t t1 = strtol(entry->value->ptr, NULL, 10);
-    DEBUG("sososo", "t0:", t0, ", t1:", t1, ", timeout:", pc->timeout);
+    DEBUG("sdsdsd", "t0:", t0, ", t1:", t1, ", timeout:", pc->timeout);
     if (t0 - t1 > pc->timeout) return endauth(srv, con, pc);
 
     // Check for existence of actual authinfo
@@ -287,10 +295,15 @@ handle_token(server *srv, connection *con,
     buffer_append_string(field, authinfo + 1);
     array_set_key_value(con->request.headers,
                         CONST_STR_LEN("Authorization"), CONST_BUF_LEN(field));
+
+    // update REMOTE_USER field
+    base64_decode(field, authinfo + 1);
+    char *pw = strchr(field->ptr, ':'); *pw = '\0';
+    DEBUG("ss", "identified user:", field->ptr);
+    buffer_copy_string_len(con->authed_user, field->ptr, strlen(field->ptr));
     buffer_free(field);
 
     DEBUG("s", "all check passed");
-    
     return HANDLER_GO_ON;
 }
 
@@ -322,7 +335,7 @@ handle_crypt(server *srv, connection *con,
     time_t t1, t0 = time(NULL);
     buffer *buf = buffer_init();
     for (t1 = t0 - (t0 % 5); t0 - t1 < 10; t1 -= 5) {
-        DEBUG("soso", "t0:", t0, ", t1:", t1);
+        DEBUG("sdsd", "t0:", t0, ", t1:", t1);
         
         // compute hash for this time segment
         sprintf(tmp, "%lu", t1);
@@ -343,8 +356,10 @@ handle_crypt(server *srv, connection *con,
     buffer_free(buf);
 
     // Has this found time segment expired?
-    if (! (t0 - t1 < 10)) return endauth(srv, con, pc);
-
+    if (! (t0 - t1 < 10)) {
+        DEBUG("s", "timeout detected");
+        return endauth(srv, con, pc);
+    }
     DEBUG("s", "timeout check passed");
     
     // compute temporal encryption key (= MD5(t1, key))

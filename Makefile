@@ -1,4 +1,4 @@
-SRCS = mod_auth_cookie.c
+SRCS = mod_auth_cookie.c base64.c
 OBJS = $(SRCS:.c=.o)
 
 CDEFS = -DHAVE_CONFIG_H -DHAVE_VERSION_H \

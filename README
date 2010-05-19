@@ -127,3 +127,9 @@ cookie using PHP.
   header("Location: /protected/page.php");
   ?>
 
+=== TODO/WISHLIST ===
+- Clean up string/buffer handling
+- Should clean up expired entries to free memory
+- Introducing "srp:" cookie (encryption with Secure Remote Password)
+- Allow authinfo injection using URL (for distributed auth)
+- Add demo in other programming languages
