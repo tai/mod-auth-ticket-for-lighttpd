@@ -5,7 +5,7 @@ mod_auth_cookie for lighttpd
 This is a lighttpd module that
 
   1) controls access to web page by cookie authentication, and
-  2) maps authenticated cookie into HTTP Basic Authorization header.
+  2) maps cookie content into HTTP Basic Authentication header.
 
 Initial goal of this module was to map OpenID/SSO mechanism
 onto HTTP BasicAuth mechanism, so I can move various legacy
@@ -14,20 +14,20 @@ HTTP-BA based services under the hood of Google Accounts SSO.
 === How does it work? ===
 
 This module does not verify user identity, but simply checks
-if UA has supplied verifiable authorization token in a cookie.
+if UA has supplied verifiable authorization data in a cookie.
 Once verified, this module accepts whatever was in that
 encrypted cookie as user identity.
 
 Since embedding plain username/password in a cookie is a
-big NO-NO, this token is encrypted and signed by its issuer,
+big NO-NO, this data is encrypted and signed by its issuer,
 in many case, external OpenID RP logon page.
 
 Typical session works as follows:
 
   1. User tries to access protected page ("Page#1").
 
-  2. mod_auth_cookie checks for a cookie, and founds no
-     verifiable cookie exists. It now redirects UA to
+  2. mod_auth_cookie checks for a cookie, and finds no
+     verifiable cookie exists. So it redirects UA to
      external logon page ("Page#2").
 
   3. At Page#2, the user is guided to OpenID SSO logon,
@@ -39,10 +39,11 @@ Typical session works as follows:
 
   5. mod_auth_cookie traps access to Page#1, and examines
      cookie. Once verified, identity will be cached and
-     random token is generated and linked to the identity.
+     random token is generated as a replacement cookie
+     for given identity.
 
   6. mod_auth_cookie overwrites cookie with previously-
-     generated token, so further UA access will not directly
+     generated token, so further UA access will not
      contain identity info.
 
   7. mod_auth_cookie maps identity info to HTTP-BA header, so
@@ -56,9 +57,9 @@ mechanism.
 
 I first planned to implement mod_auth_openid which provides
 OpenID RP feature directly, but abandoned as it'd be much
-better and flexible to handle it in web application code.
-This modules provides minimal feature needed by external
-OpenID RP to inject identity information to HTTP-BA layer.
+flexible to handle it in web application code. This modules
+provides minimal feature needed by external OpenID RP to
+inject identity information to HTTP-BA layer.
 
 === Configuration ===
 
@@ -76,7 +77,8 @@ OpenID RP to inject identity information to HTTP-BA layer.
       auth-cookie.options  = "path=/;"
 
       # URL of logon page to redirect to in case of unverified cookie
-      auth-cookie.authurl  = "/mac/login.php"
+      # Redirected URL will have a form of "/login.php?url=original-url"
+      auth-cookie.authurl  = "/login.php"
 
       # Shared key used to encrypt and sign cookie payload
       auth-cookie.key      = "shared-secret"
@@ -88,9 +90,6 @@ Following is a sample code for generating verifiable auth
 cookie using PHP.
 
   <?php
-  session_set_cookie_params(0, '/', '', FALSE, TRUE); 
-  session_start();
-  
   // check identity
   if (! check_user($_POST["username"], $POST["password"])) {
       header("Location: login.php");
