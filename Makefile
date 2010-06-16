@@ -7,9 +7,10 @@ CDEFS = -DHAVE_CONFIG_H -DHAVE_VERSION_H \
 	-D_REENTRANT -D__EXTENSIONS__ -DPIC \
 	-D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_LARGE_FILES
 #CFLAGS =$(CDEFS)  -I/d/src/lighttpd/1.4.x/src
-CFLAGS = $(CDEFS) -I/d/src/lighttpd-1.4.26 -I/d/src/lighttpd-1.4.26/src
+CFLAGS = $(CDEFS) -I/d/src/lighttpd-1.4.26 -I/d/src/lighttpd-1.4.26/src \
+	-g -O2 -Wall -W -Wshadow -pedantic -std=gnu99
 
-CC = gcc -g -O2 -Wall -W -Wshadow -pedantic -std=gnu99
+CC = gcc
 LD = gcc
 
 .c.o:

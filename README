@@ -132,3 +132,4 @@ cookie using PHP.
 - Introducing "srp:" cookie (encryption with Secure Remote Password)
 - Allow authinfo injection using URL (for distributed auth)
 - Add demo in other programming languages
+- Make it compatible with Apache mod_auth_tkt/mod_auth_pubtkt.
