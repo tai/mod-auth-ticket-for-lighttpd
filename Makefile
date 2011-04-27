@@ -1,4 +1,4 @@
-SRCS = mod_auth_cookie.c base64.c
+SRCS = mod_auth_ticket.c base64.c
 OBJS = $(SRCS:.c=.o)
 
 CDEFS = -DHAVE_CONFIG_H -DHAVE_VERSION_H \
@@ -16,9 +16,9 @@ LD = gcc
 .c.o:
 	$(CC) $(CFLAGS) -fPIC -shared -c $<
 
-all: mod_auth_cookie.so
+all: mod_auth_ticket.so
 
-mod_auth_cookie.so: $(OBJS)
+mod_auth_ticket.so: $(OBJS)
 	$(LD) $(LDFLAGS) -fPIC -shared -o $@ $(OBJS)
 
 clean:

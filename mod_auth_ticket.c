@@ -1,5 +1,5 @@
 //
-// Cookie-based authentication for lighttpd
+// mod_auth_ticket - Authentication based on signed cookie
 //
 // This module protects webpage from clients without valid
 // cookie. By redirecting not-yet-valid clients to certain
@@ -57,7 +57,7 @@ typedef struct {
 // top-level module structure
 typedef struct {
     PLUGIN_DATA;
-        
+
     plugin_config **config;
     plugin_config   conf;
 
@@ -102,13 +102,13 @@ merge_config(server *srv, connection *con, plugin_data *pd) {
             data_unset *du = dc->value->data[j];
 
             // describe your merge-policy here...
-            MERGE("auth-cookie.loglevel", loglevel);
-            MERGE("auth-cookie.name", name);
-            MERGE("auth-cookie.override", override);
-            MERGE("auth-cookie.authurl", authurl);
-            MERGE("auth-cookie.key", key);
-            MERGE("auth-cookie.timeout", timeout);
-            MERGE("auth-cookie.options", options);
+            MERGE("auth-ticket.loglevel", loglevel);
+            MERGE("auth-ticket.name", name);
+            MERGE("auth-ticket.override", override);
+            MERGE("auth-ticket.authurl", authurl);
+            MERGE("auth-ticket.key", key);
+            MERGE("auth-ticket.timeout", timeout);
+            MERGE("auth-ticket.options", options);
         }
     }
     return &(pd->conf);
@@ -157,13 +157,13 @@ endauth(server *srv, connection *con, plugin_config *pc) {
     return HANDLER_FINISHED;
 }
 
-inline int
+inline static int
 min(int a, int b) {
     return a > b ? b : a;
 }
 
 // generate hex-encoded random string
-int
+static int
 gen_random(buffer *b, int len) {
     buffer_prepare_append(b, len);
     while (len--) {
@@ -174,16 +174,16 @@ gen_random(buffer *b, int len) {
 }
 
 // encode bytes into hexstring
-int
+static int
 hex_encode(buffer *b, const uint8_t *s, int len) {
     return buffer_copy_string_hex(b, (const char *)s, len);
 }
 
 // decode hexstring into bytes
-int
+static int
 hex_decode(buffer *b, const char *s) {
     char c0, c1;
-        
+
     buffer_prepare_append(b, strlen(s) >> 1);
     while ((c0 = *s++) && (c1 = *s++)) {
         char v = (hex2int(c0) << 4) | hex2int(c1);
@@ -193,7 +193,9 @@ hex_decode(buffer *b, const char *s) {
 }
 
 // XOR-based decryption
-int
+// This is not used in this module - it is only provided as an
+// example of supported encryption.
+static int __attribute__((unused))
 encrypt(buffer *buf, uint8_t *key, int keylen) {
     unsigned int i;
 
@@ -204,7 +206,7 @@ encrypt(buffer *buf, uint8_t *key, int keylen) {
 }
 
 // XOR-based encryption
-int
+static int
 decrypt(buffer *buf, uint8_t *key, int keylen) {
     int i;
 
@@ -222,7 +224,7 @@ decrypt(buffer *buf, uint8_t *key, int keylen) {
 //
 // update header using (verified) authentication info.
 //
-void
+static void
 update_header(server *srv, connection *con,
               plugin_data *pd, plugin_config *pc, buffer *authinfo) {
     buffer *field, *token;
@@ -258,7 +260,7 @@ update_header(server *srv, connection *con,
     char *pw = strchr(field->ptr, ':'); *pw = '\0';
     DEBUG("ss", "identified username:", field->ptr);
     buffer_copy_string_len(con->authed_user, field->ptr, strlen(field->ptr));
-    
+
     buffer_free(field);
     buffer_free(token);
 }
@@ -268,7 +270,7 @@ update_header(server *srv, connection *con,
 //
 // Expected Cookie Format:
 //   <name>=token:<random-token-to-be-verified>
-// 
+//
 static handler_t
 handle_token(server *srv, connection *con,
              plugin_data *pd, plugin_config *pc, char *token) {
@@ -329,14 +331,14 @@ handle_crypt(server *srv, connection *con,
     if (! data) return endauth(srv, con, pc);
 
     DEBUG("s", "verifying crypt cookie...");
-    
+
     // Verify signature.
     // Also, find time segment when this auth request was encrypted.
     time_t t1, t0 = time(NULL);
     buffer *buf = buffer_init();
     for (t1 = t0 - (t0 % 5); t0 - t1 < 10; t1 -= 5) {
         DEBUG("sdsd", "t0:", t0, ", t1:", t1);
-        
+
         // compute hash for this time segment
         sprintf(tmp, "%lu", t1);
         MD5_Init(&ctx);
@@ -361,7 +363,7 @@ handle_crypt(server *srv, connection *con,
         return endauth(srv, con, pc);
     }
     DEBUG("s", "timeout check passed");
-    
+
     // compute temporal encryption key (= MD5(t1, key))
     sprintf(tmp, "%lu", t1);
     MD5_Init(&ctx);
@@ -380,7 +382,7 @@ handle_crypt(server *srv, connection *con,
 
     // update header using decrypted authinfo
     update_header(srv, con, pd, pc, buf);
-    
+
     buffer_free(buf);
     return HANDLER_GO_ON;
 }
@@ -404,7 +406,7 @@ FREE_FUNC(module_free) {
 
     // Free plugin data
     array_free(pd->users);
-    
+
     // Free configuration data.
     // This must be done for each context.
     if (pd->config) {
@@ -461,7 +463,7 @@ URIHANDLER_FUNC(module_uri_handler) {
     strncpy(key, pc->name->ptr,  min(sizeof(key) - 1, pc->name->used));
     strncpy(buf, ds->value->ptr, min(sizeof(buf) - 1, ds->value->used));
     DEBUG("ss", "parsing for key:", key);
-    
+
     // check for "<AuthName>=" entry in a cookie
     for (cs = buf; (cs = strstr(cs, key)) != NULL; ) {
         DEBUG("ss", "checking cookie entry:", cs);
@@ -507,19 +509,19 @@ SETDEFAULTS_FUNC(module_set_defaults) {
     size_t i;
 
     config_values_t cv[] = {
-        { "auth-cookie.loglevel",
+        { "auth-ticket.loglevel",
           NULL, T_CONFIG_INT,    T_CONFIG_SCOPE_CONNECTION },
-        { "auth-cookie.name",
+        { "auth-ticket.name",
           NULL, T_CONFIG_STRING, T_CONFIG_SCOPE_CONNECTION },
-        { "auth-cookie.override",
+        { "auth-ticket.override",
           NULL, T_CONFIG_INT,    T_CONFIG_SCOPE_CONNECTION },
-        { "auth-cookie.authurl",
+        { "auth-ticket.authurl",
           NULL, T_CONFIG_STRING, T_CONFIG_SCOPE_CONNECTION },
-        { "auth-cookie.key",
+        { "auth-ticket.key",
           NULL, T_CONFIG_STRING, T_CONFIG_SCOPE_CONNECTION },
-        { "auth-cookie.timeout",
+        { "auth-ticket.timeout",
           NULL, T_CONFIG_INT,    T_CONFIG_SCOPE_CONNECTION },
-        { "auth-cookie.options",
+        { "auth-ticket.options",
           NULL, T_CONFIG_STRING, T_CONFIG_SCOPE_CONNECTION },
         { NULL, NULL, T_CONFIG_UNSET, T_CONFIG_SCOPE_UNSET }
     };
@@ -556,9 +558,9 @@ SETDEFAULTS_FUNC(module_set_defaults) {
 }
 
 int
-mod_auth_cookie_plugin_init(plugin *p) {
+mod_auth_ticket_plugin_init(plugin *p) {
     p->version          = LIGHTTPD_VERSION_ID;
-    p->name             = buffer_init_string("auth_cookie");
+    p->name             = buffer_init_string("auth_ticket");
     p->init             = module_init;
     p->set_defaults     = module_set_defaults;
     p->cleanup          = module_free;

@@ -1,19 +1,23 @@
-mod_auth_cookie for lighttpd
+mod_auth_ticket for lighttpd
 
 === What is it? ===
 
 This is a lighttpd module that
 
-  1) controls access to web page by cookie authentication, and
-  2) maps cookie content into HTTP Basic Authentication header.
+  1) controls access to web page using signed cookie authentication, and
+  2) maps verified cookie content into HTTP Basic Authentication header.
 
 Initial goal of this module was to map OpenID/SSO mechanism
 onto HTTP BasicAuth mechanism, so I can move various legacy
 HTTP-BA based services under the hood of Google Accounts SSO.
 
+This module was initially called "mod_auth_cookie", but it
+turned out to be a bad name as the original (mod_auth_cookie for Apache)
+never provided any kind of security - which this module do provide.
+
 === How does it work? ===
 
-This module does not verify user identity, but simply checks
+This module does not directly verify user identity, but checks
 if UA has supplied verifiable authorization data in a cookie.
 Once verified, this module accepts whatever was in that
 encrypted cookie as user identity.
@@ -26,30 +30,27 @@ Typical session works as follows:
 
   1. User tries to access protected page ("Page#1").
 
-  2. mod_auth_cookie checks for a cookie, and finds no
-     verifiable cookie exists. So it redirects UA to
-     external logon page ("Page#2").
+  2. mod_auth_ticket checks for a cookie, and finds no
+     verifiable cookie exists. So it asks for authentication
+     by redirecting UA to external logon page ("Page#2").
 
-  3. At Page#2, the user is guided to OpenID SSO logon,
-     and comes back to Page#2 with verified identity.
+  3. From Page#2, user is guided to SSO (OpenID, etc) logon,
+     and comes back with verified identity.
 
   4. At Page#2, verified identity is encrypted and signed
      with shared key between Page#1 and #2, and finally
      redirected back to Page#1.
 
-  5. mod_auth_cookie traps access to Page#1, and examines
-     cookie. Once verified, identity will be cached and
-     random token is generated as a replacement cookie
-     for given identity.
+  5. mod_auth_ticket examines cookie. Once verified, random
+     token is issued as an access token (cookie), which replaces
+     this incoming cookie. Hereafter, UA will only carry that
+     random token - identity data will only be managed internally
+     by mod_auth_ticket.
 
-  6. mod_auth_cookie overwrites cookie with previously-
-     generated token, so further UA access will not
-     contain identity info.
+  6. mod_auth_ticket maps identity info to HTTP-BA header, so
+     webapps can recognize user identity by $REMOTE_USER.
 
-  7. mod_auth_cookie maps identity info to HTTP-BA header, so
-     legacy webapps can recognize user identity.
-
-  8. Finally, the user is now allowed to view Page#1.
+  7. Finally, the user is now allowed to view Page#1.
 
 This is a lengthly process, but this trampoline-like flow is
 needed to map complex OpenID-like authentication onto HTTP-BA
@@ -64,24 +65,24 @@ inject identity information to HTTP-BA layer.
 === Configuration ===
 
   $HTTP["url"] =~ "^/secret/" {
-      auth-cookie.loglevel = 255
+      auth-ticket.loglevel = 255
 
       # Ignore incoming Authorization: header
-      auth-cookie.override = 2
+      auth-ticket.override = 2
 
       # Life-duration of generated auth token
-      auth-cookie.timeout  = 3600
+      auth-ticket.timeout  = 3600
 
       # Cookie name and option to use
-      auth-cookie.name     = "TestAuth"
-      auth-cookie.options  = "path=/;"
+      auth-ticket.name     = "TestAuth"
+      auth-ticket.options  = "path=/;"
 
       # URL of logon page to redirect to in case of unverified cookie
       # Redirected URL will have a form of "/login.php?url=original-url"
-      auth-cookie.authurl  = "/login.php"
+      auth-ticket.authurl  = "/login.php"
 
       # Shared key used to encrypt and sign cookie payload
-      auth-cookie.key      = "shared-secret"
+      auth-ticket.key      = "shared-secret"
   }
 
 === How to encrypt and sign cookie ===
@@ -119,7 +120,7 @@ cookie using PHP.
   $signature = md5($key . $now . $encrypted);
   $totaldata = "crypt:" . $signature . ":" . $encrypted;
 
-  # set as cookie, so mod_auth_cookie willl see it in further use
+  # set as cookie, so mod_auth_ticket willl see it in further use
   setcookie("TestAuth", $totaldata, 0, "/", "", FALSE, TRUE);
 
   # redirect back to original protected page
