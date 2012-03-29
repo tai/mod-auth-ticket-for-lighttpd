@@ -21,9 +21,11 @@
 #include "response.h"
 #include "md5.h"
 
+#define VER_ID(major, minor, relno) ((major) << 16 | (minor) << 8 | (relno))
+
 // Compatibility macros to use this module with older lighttpd versions.
 // With svn commit r2788, MD5* APIs were renamed to li_MD5*.
-#ifdef HAS_OLD_MD5_API
+#if LIGHTTPD_VERSION_ID < VER_ID(1, 4, 29)
 #define li_MD5_CTX    MD5_CTX
 #define li_MD5_Init   MD5_Init
 #define li_MD5_Update MD5_Update

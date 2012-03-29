@@ -2,14 +2,8 @@
 
 # Where lighttpd source tarball is extracted
 LIGHTTPD_DIR = /d/src/lighttpd/1.4.x
-#LIGHTTPD_DIR = /d/src/lighttpd-1.4.26
-
-# Enable this if you are not using latest version and got build error
-# with missing MD5/li_MD5 symbols (at least, 1.4.26 requires this).
-#
-# It's too bad I can't handle this automatically as lighttpd does not
-# provide good version macro for conditional compilation...
-#COMPAT_DEFS = -DHAS_OLD_MD5_API
+#LIGHTTPD_DIR = /d/src/lighttpd-1.4.29
+#LIGHTTPD_DIR = /d/src/lighttpd-1.4.28
 
 ######################################################################
 
