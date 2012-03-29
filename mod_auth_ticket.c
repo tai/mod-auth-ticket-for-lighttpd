@@ -21,6 +21,15 @@
 #include "response.h"
 #include "md5.h"
 
+// Compatibility macros to use this module with older lighttpd versions.
+// With svn commit r2788, MD5* APIs were renamed to li_MD5*.
+#ifdef HAS_OLD_MD5_API
+#define li_MD5_CTX    MD5_CTX
+#define li_MD5_Init   MD5_Init
+#define li_MD5_Update MD5_Update
+#define li_MD5_Final  MD5_Final
+#endif
+
 #include "base64.h"
 
 #define LOG(level, ...)                                           \
@@ -322,7 +331,7 @@ handle_token(server *srv, connection *con,
 static handler_t
 handle_crypt(server *srv, connection *con,
              plugin_data *pd, plugin_config *pc, char *line) {
-    MD5_CTX ctx;
+    li_MD5_CTX ctx;
     uint8_t hash[MD5_LEN];
     char    tmp[256];
 
@@ -341,11 +350,11 @@ handle_crypt(server *srv, connection *con,
 
         // compute hash for this time segment
         sprintf(tmp, "%lu", t1);
-        MD5_Init(&ctx);
-        MD5_Update(&ctx, CONST_BUF_LEN(pc->key));
-        MD5_Update(&ctx, tmp, strlen(tmp));
-        MD5_Update(&ctx, data + 1, strlen(data + 1));
-        MD5_Final(hash, &ctx);
+        li_MD5_Init(&ctx);
+        li_MD5_Update(&ctx, CONST_BUF_LEN(pc->key));
+        li_MD5_Update(&ctx, tmp, strlen(tmp));
+        li_MD5_Update(&ctx, data + 1, strlen(data + 1));
+        li_MD5_Final(hash, &ctx);
         hex_encode(buf, hash, sizeof(hash));
 
         DEBUG("sb", "computed hash:", buf);
@@ -366,10 +375,10 @@ handle_crypt(server *srv, connection *con,
 
     // compute temporal encryption key (= MD5(t1, key))
     sprintf(tmp, "%lu", t1);
-    MD5_Init(&ctx);
-    MD5_Update(&ctx, tmp, strlen(tmp));
-    MD5_Update(&ctx, CONST_BUF_LEN(pc->key));
-    MD5_Final(hash, &ctx);
+    li_MD5_Init(&ctx);
+    li_MD5_Update(&ctx, tmp, strlen(tmp));
+    li_MD5_Update(&ctx, CONST_BUF_LEN(pc->key));
+    li_MD5_Final(hash, &ctx);
 
     // decrypt
     hex_decode(buf = buffer_init(), data + 1);
