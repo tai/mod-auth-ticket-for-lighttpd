@@ -248,7 +248,9 @@ update_header(server *srv, connection *con,
 
     // insert auth header
     field = buffer_init_string("Basic ");
-    buffer_append_string_buffer(field, authinfo);
+
+    //rescbr: bugfix: authinfo does not end with \0
+    buffer_append_string_len(field, authinfo->ptr, authinfo->used);
     array_set_key_value(con->request.headers,
                         CONST_STR_LEN("Authorization"), CONST_BUF_LEN(field));
 
@@ -257,7 +259,9 @@ update_header(server *srv, connection *con,
     DEBUG("sb", "pairing authinfo with token:", token);
     buffer_copy_long(field, time(NULL));
     buffer_append_string(field, ":");
-    buffer_append_string_buffer(field, authinfo);
+    
+    //rescbr: bugfix: authinfo does not end with \0
+    buffer_append_string_len(field, authinfo->ptr, authinfo->used);
     array_set_key_value(pd->users, CONST_BUF_LEN(token), CONST_BUF_LEN(field));
 
     // insert opaque auth token
