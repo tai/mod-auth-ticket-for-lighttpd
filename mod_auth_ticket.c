@@ -15,6 +15,8 @@
 //
 
 #include <ctype.h>
+#include <string.h>
+#include <stdio.h>
 
 #include "plugin.h"
 #include "log.h"
@@ -203,6 +205,7 @@ hex_decode(buffer *b, const char *s) {
     return 0;
 }
 
+#if 0
 // XOR-based decryption
 // This is not used in this module - it is only provided as an
 // example of supported encryption.
@@ -215,6 +218,7 @@ encrypt(buffer *buf, uint8_t *key, int keylen) {
     }
     return 0;
 }
+#endif
 
 // XOR-based encryption
 static int
