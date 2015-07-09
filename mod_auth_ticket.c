@@ -15,6 +15,8 @@
 //
 
 #include <ctype.h>
+#include <string.h>
+#include <stdio.h>
 
 #include "plugin.h"
 #include "log.h"
@@ -203,6 +205,7 @@ hex_decode(buffer *b, const char *s) {
     return 0;
 }
 
+#if 0
 // XOR-based decryption
 // This is not used in this module - it is only provided as an
 // example of supported encryption.
@@ -215,6 +218,7 @@ encrypt(buffer *buf, uint8_t *key, int keylen) {
     }
     return 0;
 }
+#endif
 
 // XOR-based encryption
 static int
@@ -244,7 +248,9 @@ update_header(server *srv, connection *con,
 
     // insert auth header
     field = buffer_init_string("Basic ");
-    buffer_append_string_buffer(field, authinfo);
+
+    //rescbr: bugfix: authinfo does not end with \0
+    buffer_append_string_len(field, authinfo->ptr, authinfo->used);
     array_set_key_value(con->request.headers,
                         CONST_STR_LEN("Authorization"), CONST_BUF_LEN(field));
 
@@ -253,7 +259,9 @@ update_header(server *srv, connection *con,
     DEBUG("sb", "pairing authinfo with token:", token);
     buffer_copy_long(field, time(NULL));
     buffer_append_string(field, ":");
-    buffer_append_string_buffer(field, authinfo);
+    
+    //rescbr: bugfix: authinfo does not end with \0
+    buffer_append_string_len(field, authinfo->ptr, authinfo->used);
     array_set_key_value(pd->users, CONST_BUF_LEN(token), CONST_BUF_LEN(field));
 
     // insert opaque auth token
@@ -270,7 +278,19 @@ update_header(server *srv, connection *con,
     base64_decode(field, authinfo->ptr);
     char *pw = strchr(field->ptr, ':'); *pw = '\0';
     DEBUG("ss", "identified username:", field->ptr);
+#if LIGHTTPD_VERSION_ID < VER_ID(1, 4, 33)
     buffer_copy_string_len(con->authed_user, field->ptr, strlen(field->ptr));
+#else
+    data_string *ds;
+    if (NULL == (ds = (data_string *)array_get_element(con->environment, "REMOTE_USER"))) {
+        if (NULL == (ds = (data_string *)array_get_unused_element(con->environment, TYPE_STRING))) {
+            ds = data_string_init();
+        }
+        buffer_copy_string(ds->key, "REMOTE_USER");
+        array_insert_unique(con->environment, (data_unset *)ds);
+    }
+    buffer_copy_string_len(ds->value, field->ptr, strlen(field->ptr));
+#endif
 
     buffer_free(field);
     buffer_free(token);
@@ -313,7 +333,19 @@ handle_token(server *srv, connection *con,
     base64_decode(field, authinfo + 1);
     char *pw = strchr(field->ptr, ':'); *pw = '\0';
     DEBUG("ss", "identified user:", field->ptr);
+#if LIGHTTPD_VERSION_ID < VER_ID(1, 4, 33)
     buffer_copy_string_len(con->authed_user, field->ptr, strlen(field->ptr));
+#else
+    data_string *ds;
+    if (NULL == (ds = (data_string *)array_get_element(con->environment, "REMOTE_USER"))) {
+        if (NULL == (ds = (data_string *)array_get_unused_element(con->environment, TYPE_STRING))) {
+            ds = data_string_init();
+        }
+        buffer_copy_string(ds->key, "REMOTE_USER");
+        array_insert_unique(con->environment, (data_unset *)ds);
+    }
+    buffer_copy_string_len(ds->value, field->ptr, strlen(field->ptr));
+#endif
     buffer_free(field);
 
     DEBUG("s", "all check passed");
